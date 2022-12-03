@@ -39,6 +39,8 @@ const boidsTrails = {
 // ---------------
 let globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
 let extensionHistory = [];
+let boidsAlive = []
+let maxLength = 1000
 
 // ---------------------
 // Simulation parameters
@@ -50,7 +52,7 @@ let matchingFactor = 0.05; // Alignment
 // Predation
 let predationFactor = 0.005; // How much the predator will pursue the flock
 let avoidPredatorFactor = 0.05; // How much the flock try to avoid the predator
-var eatRange = 10;
+var eatRange = 40;
 // =======
 // OPTIONS
 // =======
@@ -537,8 +539,8 @@ function drawGlobalVector(ctx) {
 function updateMetrics() {
   // Calculate vectorized center of the flock
   globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
-  let ext;
-
+  let ext = 0;
+  boids_copy = boids.copyWithin()
   for (boid of boids) {
     globalVector.dx += boid.dx;
     globalVector.dy += boid.dy;
@@ -555,8 +557,18 @@ function updateMetrics() {
       (globalVector.x - boid.x) ** 2 + (globalVector.y - boid.y) ** 2
     );
   }
+
   ext /= boids.length;
+
   extensionHistory.push(ext);
+  boidsAlive.push(boids.length);
+
+  if (extensionHistory.length > maxLength) {
+    extensionHistory.splice(0, 1)
+  }
+  if (boidsAlive.length > maxLength) {
+    boidsAlive.splice(0, 1)
+  }
 }
 
 // -------------------
@@ -663,6 +675,9 @@ window.onload = () => {
   // Randomly distribute the boids and obstacles to start
   initAll();
 
+  // Init simulation plots
+  drawSimPlots();
+
   // Schedule the main animation loop
   window.requestAnimationFrame(animationLoop);
 
@@ -735,3 +750,76 @@ window.onload = () => {
     initAll();
   };
 };
+
+
+// ---------------------
+// Draw simulation plots
+// ---------------------
+function drawSimPlots() {
+  let extensionTrace = {
+    y: extensionHistory,
+    mode:'lines',
+    line: {color: BLUE},
+    name: 'Extension'
+  }
+
+  let countBoids = {
+    y: boidsAlive,
+    xaxis: 'x2',
+    yaxis: 'y2',  
+    mode: 'lines',
+    line: {color: RED},
+    name: 'Boids alive'
+  }
+
+  let layout = {
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0, 0, 0, 0)",
+    xaxis: {
+      tickcolor: 'grey',
+      tickfont: {
+        color: BLUE
+      },
+      gridcolor: 'grey',
+      linecolor:'grey'
+
+    },
+    yaxis: {
+      tickcolor: 'grey',
+      tickfont: {
+        color: BLUE
+      },
+      gridcolor: 'grey',
+      linecolor:'grey'
+    },
+    xaxis2: {
+      tickcolor: 'grey',
+      tickfont: {
+        color: BLUE
+      },
+      gridcolor: 'grey',
+      linecolor:'grey'
+    },
+    yaxis2: {
+      tickcolor: 'grey',
+      tickfont: {
+        color: BLUE
+      },
+      gridcolor: 'grey',
+      linecolor:'grey'
+    },
+    legend: {
+      font: {
+        color: BLUE
+      }
+    },
+    grid: {rows: 2, columns: 1, pattern: 'independent'},
+  }
+
+  Plotly.newPlot('charts', [extensionTrace, countBoids], layout);
+  
+  var interval = setInterval(function () {
+    Plotly.update(charts, {y: [extensionHistory, boidsAlive]})
+    // Plotly.extendTraces('charts', {y: [extensionHistory, boidsAlive]}, [0, 1])
+  }, 1000)
+}
