@@ -537,7 +537,8 @@ function drawGlobalVector(ctx) {
 function updateMetrics() {
   // Calculate vectorized center of the flock
   globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
-  temp = { x: 0, y: 0 };
+  let ext;
+
   for (boid of boids) {
     globalVector.dx += boid.dx;
     globalVector.dy += boid.dy;
@@ -548,6 +549,14 @@ function updateMetrics() {
   globalVector.dy /= boids.length;
   globalVector.x /= boids.length;
   globalVector.y /= boids.length;
+
+  for (boid of boids) {
+    ext += Math.sqrt(
+      (globalVector.x - boid.x) ** 2 + (globalVector.y - boid.y) ** 2
+    );
+  }
+  ext /= boids.length;
+  extensionHistory.push(ext);
 }
 
 // -------------------
