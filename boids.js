@@ -14,11 +14,12 @@ const BOID_SPEED_LIMIT = 8;
 const LEADER_VISUAL_RANGE_MULT = 3;
 const COMM_INTERVAL = 500;
 // Colors constants
-// Colors
 const YELLOW = "#f4df55";
 const BLUE = "#558cf4";
+const GREEN = "#63D471";
 const RED = "#d8315b";
 const ALPHA_BLUE = "#558cf466";
+const ALPHA_GREEN = "#63D47166";
 const ALPHA_RED = "#d8315b66";
 const ALPHA_YELLOW = "#f4df5566";
 // Colors config
@@ -33,6 +34,12 @@ const boidsTrails = {
   leaderBoid: ALPHA_YELLOW,
 };
 
+// ---------------
+// Simulation data
+// ---------------
+let globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
+let extensionHistory = [];
+
 // ---------------------
 // Simulation parameters
 // ---------------------
@@ -40,15 +47,24 @@ let visualRange = 75;
 let centeringFactor = 0.005; // Coherence
 let avoidFactor = 0.05; // Separation
 let matchingFactor = 0.05; // Alignment
-// Mouse leader
-let mouseLeaderMode = false;
-let mouseLeaderWeight = 0.3; // How much the boids will go towards the leader
 // Predation
 let predationFactor = 0.005; // How much the predator will pursue the flock
 let avoidPredatorFactor = 0.05; // How much the flock try to avoid the predator
 var eatRange = 10;
+// =======
+// OPTIONS
+// =======
 // Visual
-let drawTrail = true;
+let seeTrail = false;
+let seeGlobalVector = false;
+// Mouse leader
+let useMouseLeader = false;
+let mouseLeaderWeight = 0.3; // How much the boids will go towards the leader
+// Obstacles and Turbulence
+let useObstaclesTurb = false;
+// Leader
+let useLeaders = false;
+let usePredators = false;
 
 // Interaction
 let mouse = {
@@ -132,6 +148,7 @@ function updateArrows() {
 }
 
 function reactToArrow(boid) {
+  if (!useLeaders) return;
   for (leader of leaderBoids) {
     // If boid can see an arrow
     if (
@@ -238,7 +255,7 @@ function flyTowardsCenter(boid) {
     centerY = centerY / numNeighbors;
 
     // Weighting in mouse leader position if mouse leader is visible
-    if (mouseLeaderMode) {
+    if (useMouseLeader) {
       if (distance(boid, mouse) < visualRange * LEADER_VISUAL_RANGE_MULT) {
         centerX =
           mouse.x * mouseLeaderWeight + centerX * (1 - mouseLeaderWeight);
@@ -252,9 +269,11 @@ function flyTowardsCenter(boid) {
   }
 }
 
-// The predator flies towards the center of the flock it is huntinh
-// The predator have a larger visual range
+// The predator flies towards the center of the flock it is hunting
+// The predator has a larger visual range
 function flyTowardsCenterPredator(boid) {
+  if (!usePredators) return;
+
   let centerX = 0;
   let centerY = 0;
   let numNeighbors = 0;
@@ -296,6 +315,8 @@ function avoidOthers(boid) {
 
 // Run away from predators
 function avoidPredators(boid) {
+  if (!usePredators) return;
+
   let moveX = 0;
   let moveY = 0;
   for (let predator of predatorBoids) {
@@ -316,6 +337,8 @@ function avoidPredators(boid) {
 
 // Boids will try to avoid obstacles, the near it gets more it will avoid.
 function avoidObstacle(boid) {
+  if (!useObstaclesTurb) return;
+
   let moveX = 0;
   let moveY = 0;
   let changeDirectionFactor = 0;
@@ -334,6 +357,8 @@ function avoidObstacle(boid) {
 
 // The windCircle adds a factor to each direction of the boid
 function passThroughWindCircle(boid) {
+  if (!useObstaclesTurb) return;
+
   let moveX = 0;
   let moveY = 0;
   let aerodinamicFactor = 1;
@@ -372,9 +397,9 @@ function matchVelocity(boid) {
   }
 }
 
-// Find the average velocity (speed and direction) of the other boids and
-// adjust velocity slightly to match.
 function eatBoids(predator) {
+  if (!usePredators) return;
+
   let boidsToEat = [];
   for (let i = 0; i < boids.length; i++) {
     let otherBoid = boids[i];
@@ -421,7 +446,7 @@ function limitSpeed(boid) {
   }
 }
 
-function drawTriangle(ctx, x, y, dx, dy, fillStyle) {
+function drawTriangle(ctx, x, y, dx, dy, fillStyle, mult = 1) {
   const angle = Math.atan2(dy, dx);
   ctx.translate(x, y);
   ctx.rotate(angle);
@@ -429,8 +454,8 @@ function drawTriangle(ctx, x, y, dx, dy, fillStyle) {
   ctx.fillStyle = fillStyle;
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.lineTo(x - 15, y + 5);
-  ctx.lineTo(x - 15, y - 5);
+  ctx.lineTo(x - 15 * mult, y + 5 * mult);
+  ctx.lineTo(x - 15 * mult, y - 5 * mult);
   ctx.lineTo(x, y);
   ctx.fill();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -439,7 +464,7 @@ function drawTriangle(ctx, x, y, dx, dy, fillStyle) {
 function drawBoid(ctx, boid) {
   drawTriangle(ctx, boid.x, boid.y, boid.dx, boid.dy, boidsColors[boid.type]);
 
-  if (drawTrail) {
+  if (seeTrail) {
     ctx.strokeStyle = boidsTrails[boid.type];
     ctx.beginPath();
     ctx.moveTo(boid.history[0][0], boid.history[0][1]);
@@ -463,6 +488,7 @@ function drawBoid(ctx, boid) {
 }
 
 function drawObstacles(ctx) {
+  if (!useObstaclesTurb) return;
   obstacles.forEach(function (obstacle) {
     ctx.beginPath();
     ctx.arc(obstacle.x, obstacle.y, obstacle.r, 0, Math.PI * 2);
@@ -473,6 +499,7 @@ function drawObstacles(ctx) {
 }
 
 function drawWindCircle(ctx) {
+  if (!useObstaclesTurb) return;
   windCircles.forEach(function (windCircle) {
     ctx.beginPath();
     ctx.arc(windCircle.x, windCircle.y, windCircle.r, 0, Math.PI * 2);
@@ -493,6 +520,34 @@ function drawMouseLeader(ctx, mouse) {
   ctx.lineTo(mouse.x + 5, mouse.y - 5);
   ctx.fill();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function drawGlobalVector(ctx) {
+  drawTriangle(
+    ctx,
+    globalVector.x,
+    globalVector.y,
+    globalVector.dx,
+    globalVector.dy,
+    ALPHA_GREEN,
+    2
+  );
+}
+
+function updateMetrics() {
+  // Calculate vectorized center of the flock
+  globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
+  temp = { x: 0, y: 0 };
+  for (boid of boids) {
+    globalVector.dx += boid.dx;
+    globalVector.dy += boid.dy;
+    globalVector.x += boid.x;
+    globalVector.y += boid.y;
+  }
+  globalVector.dx /= boids.length;
+  globalVector.dy /= boids.length;
+  globalVector.x /= boids.length;
+  globalVector.y /= boids.length;
 }
 
 // -------------------
@@ -554,20 +609,41 @@ function animationLoop() {
   for (boid of boids) {
     drawBoid(ctx, boid);
   }
-  if (mouseLeaderMode) drawMouseLeader(ctx, mouse);
+  if (useMouseLeader) drawMouseLeader(ctx, mouse);
 
-  for (predatorBoid of predatorBoids) {
-    drawBoid(ctx, predatorBoid);
+  if (usePredators) {
+    for (predatorBoid of predatorBoids) {
+      drawBoid(ctx, predatorBoid);
+    }
   }
 
-  for (leaderBoid of leaderBoids) {
-    drawBoid(ctx, leaderBoid);
+  if (useLeaders) {
+    for (leaderBoid of leaderBoids) {
+      drawBoid(ctx, leaderBoid);
+    }
   }
-  drawObstacles(ctx);
-  drawWindCircle(ctx);
+
+  if (useObstaclesTurb) {
+    drawObstacles(ctx);
+    drawWindCircle(ctx);
+  }
+
+  updateMetrics();
+  if (seeGlobalVector) {
+    drawGlobalVector(ctx);
+  }
 
   // Schedule the next frame
   window.requestAnimationFrame(animationLoop);
+}
+
+function initAll() {
+  // Randomly distribute the boids to start
+  initBoids();
+  initPredators();
+  initLeaders();
+  initObstacles();
+  initWindCircles();
 }
 
 window.onload = () => {
@@ -575,12 +651,8 @@ window.onload = () => {
   window.addEventListener("resize", sizeCanvas, false);
   sizeCanvas();
 
-  // Randomly distribute the boids to start
-  initBoids();
-  initPredators();
-  initLeaders();
-  initObstacles();
-  initWindCircles();
+  // Randomly distribute the boids and obstacles to start
+  initAll();
 
   // Schedule the main animation loop
   window.requestAnimationFrame(animationLoop);
@@ -610,11 +682,7 @@ window.onload = () => {
     visualRange = ev.target.value;
   };
 
-  document.getElementById("toggle-mouse").value = mouseLeaderMode;
-  document.getElementById("toggle-mouse").oninput = (ev) => {
-    mouseLeaderMode = ev.target.checked;
-  };
-
+  // Predator
   document.getElementById("slider-predator-coherence").value =
     predationFactor * 1000;
   document.getElementById("slider-predator-coherence").oninput = (ev) => {
@@ -627,7 +695,34 @@ window.onload = () => {
     avoidPredatorFactor = ev.target.value / 100;
   };
 
+  // Toggles
+
+  //   document.getElementById("toggle-mouse").value = useMouseLeader;
+  //   document.getElementById("toggle-mouse").oninput = (ev) => {
+  //     useMouseLeader = ev.target.checked;
+  //   };
+  document.getElementById("toggle-obstacles").value = useObstaclesTurb;
+  document.getElementById("toggle-obstacles").oninput = (ev) => {
+    useObstaclesTurb = ev.target.checked;
+  };
+  document.getElementById("toggle-leaders").value = useLeaders;
+  document.getElementById("toggle-leaders").oninput = (ev) => {
+    useLeaders = ev.target.checked;
+  };
+  document.getElementById("toggle-predators").value = usePredators;
+  document.getElementById("toggle-predators").oninput = (ev) => {
+    usePredators = ev.target.checked;
+  };
+  document.getElementById("toggle-global-vector").value = seeGlobalVector;
+  document.getElementById("toggle-global-vector").oninput = (ev) => {
+    seeGlobalVector = ev.target.checked;
+  };
+  document.getElementById("toggle-trail").value = seeTrail;
+  document.getElementById("toggle-trail").oninput = (ev) => {
+    seeTrail = ev.target.checked;
+  };
+
   document.getElementById("reset-button").onclick = (ev) => {
-    initBoids();
+    initAll();
   };
 };
