@@ -1,18 +1,24 @@
+// Simulation globals
 // Size of canvas. These get updated to fill the whole browser.
 let width = 150;
 let height = 150;
+let running = true;
 
 // ---------------------
 // Simulation constants
 // ---------------------
-const NUM_BOIDS = 100;
+const NUM_BOIDS = 50;
 const NUM_PREDATORS = 1;
 const NUM_LEADERS = 1;
 const NUM_OBSTACLES = 4;
 const NUM_WIND_CIRCLES = 4;
-const BOID_SPEED_LIMIT = 8;
+const BOID_SPEED_LIMIT = 6;
 const LEADER_VISUAL_RANGE_MULT = 3;
 const COMM_INTERVAL = 500;
+const MARGIN = 200;
+const TURN_FACTOR = 2;
+const TIME_UPDATE_PLOTS = 1000;
+const MAX_PLOT_LEN = 10000; // Max length of simulations data arrays
 // Colors constants
 const YELLOW = "#f4df55";
 const BLUE = "#558cf4";
@@ -39,8 +45,7 @@ const boidsTrails = {
 // ---------------
 let globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
 let extensionHistory = [];
-let boidsAlive = []
-let maxLength = 1000 // Max length of simulations data arrays
+let boidsAlive = [];
 
 // ---------------------
 // Simulation parameters
@@ -57,7 +62,7 @@ var eatRange = 40; // How far the predator can get its prey
 // OPTIONS
 // =======
 // Visual
-let seeTrail = false;
+let hideTrail = false;
 let seeGlobalVector = false;
 // Mouse leader
 let useMouseLeader = false;
@@ -66,9 +71,10 @@ let mouseLeaderWeight = 0.3; // How much the boids will go towards the leader
 let useObstaclesTurb = false;
 // Leader
 let useLeaders = false;
-let usePredators = false;
-let leaderCircle = false
+let useLeaderCircle = false;
 let leaderRadius = 100;
+// Predator
+let usePredators = false;
 
 // Interaction
 let mouse = {
@@ -152,7 +158,7 @@ function updateArrows() {
 }
 
 function reactToArrow(boid) {
-  if (!useLeaders) return;
+  if (!useLeaders || useLeaderCircle) return;
   for (leader of leaderBoids) {
     // If boid can see an arrow
     if (
@@ -166,6 +172,7 @@ function reactToArrow(boid) {
 }
 
 function distance(A, B) {
+  if (!A || !B) return;
   return Math.sqrt((A.x - B.x) * (A.x - B.x) + (A.y - B.y) * (A.y - B.y));
 }
 
@@ -211,37 +218,35 @@ function nClosestBoids(boid, n) {
 // size and width/height variables.
 function sizeCanvas() {
   const canvas = document.getElementById("boids");
+  //   const canvas = document.getElementById("metrics");
 
   width = canvas.parentElement.clientWidth;
   height = canvas.parentElement.clientHeight;
 
   canvas.width = width;
-  canvas.height = height;
+  canvas.height = height - 100;
 }
 
 // Constrain a boid to within the window. If it gets too close to an edge,
 // nudge it back in and reverse its direction.
 function keepWithinBounds(boid) {
-  const margin = 100;
-  const turnFactor = 1;
-
-  if (boid.x < margin) {
-    boid.dx += turnFactor;
+  if (boid.x < MARGIN) {
+    boid.dx += TURN_FACTOR;
   }
-  if (boid.x > width - margin) {
-    boid.dx -= turnFactor;
+  if (boid.x > width - MARGIN) {
+    boid.dx -= TURN_FACTOR;
   }
-  if (boid.y < margin) {
-    boid.dy += turnFactor;
+  if (boid.y < MARGIN) {
+    boid.dy += TURN_FACTOR;
   }
-  if (boid.y > height - margin) {
-    boid.dy -= turnFactor;
+  if (boid.y > height - MARGIN) {
+    boid.dy -= TURN_FACTOR;
   }
 }
 
 // Find the center of mass of the other boids and adjust velocity slightly to
 // point towards the center of mass.
-// If leader is visible, go towards leader with a greater weight.
+// [Deprecated: If mouse leader is used, go towards it with a greater weight.]
 function flyTowardsCenter(boid) {
   let centerX = 0;
   let centerY = 0;
@@ -258,7 +263,7 @@ function flyTowardsCenter(boid) {
     centerX = centerX / numNeighbors;
     centerY = centerY / numNeighbors;
 
-    // Weighting in mouse leader position if mouse leader is visible
+    // [Deprecated: Weighting in mouse leader position if mouse leader is visible]
     if (useMouseLeader) {
       if (distance(boid, mouse) < visualRange * LEADER_VISUAL_RANGE_MULT) {
         centerX =
@@ -405,6 +410,7 @@ function eatBoids(predator) {
   if (!usePredators) return;
 
   let boidsToEat = [];
+
   for (let i = 0; i < boids.length; i++) {
     let otherBoid = boids[i];
     if (distance(predator, otherBoid) < eatRange) {
@@ -454,10 +460,10 @@ function limitSpeed(boid) {
 function turnInCircles(boid) {
   const speed = Math.sqrt(boid.dx * boid.dx + boid.dy * boid.dy);
   const speedAngle = Math.atan2(boid.dy, boid.dx);
-  const centripetalAcceleration = speed*speed/leaderRadius;
+  const centripetalAcceleration = (speed * speed) / leaderRadius;
 
-  boid.dx += centripetalAcceleration*Math.cos(speedAngle + Math.PI/2);
-  boid.dy += centripetalAcceleration*Math.sin(speedAngle + Math.PI/2);
+  boid.dx += centripetalAcceleration * Math.cos(speedAngle + Math.PI / 2);
+  boid.dy += centripetalAcceleration * Math.sin(speedAngle + Math.PI / 2);
 }
 
 function drawTriangle(ctx, x, y, dx, dy, fillStyle, mult = 1) {
@@ -476,9 +482,10 @@ function drawTriangle(ctx, x, y, dx, dy, fillStyle, mult = 1) {
 }
 
 function drawBoid(ctx, boid) {
+  if (!boid) return;
   drawTriangle(ctx, boid.x, boid.y, boid.dx, boid.dy, boidsColors[boid.type]);
 
-  if (seeTrail) {
+  if (!hideTrail) {
     ctx.strokeStyle = boidsTrails[boid.type];
     ctx.beginPath();
     ctx.moveTo(boid.history[0][0], boid.history[0][1]);
@@ -488,8 +495,9 @@ function drawBoid(ctx, boid) {
     ctx.stroke();
   }
 
-  // If leader, draw arrow indicating last taken direction
-  if (boid.type == "leaderBoid") {
+  // If leader, and not in circle-movement mode,
+  // draw arrow indicating last taken direction
+  if (boid.type == "leaderBoid" && !useLeaderCircle) {
     drawTriangle(
       ctx,
       boid.arrow_x,
@@ -508,7 +516,6 @@ function drawObstacles(ctx) {
     ctx.arc(obstacle.x, obstacle.y, obstacle.r, 0, Math.PI * 2);
     ctx.fillStyle = "black";
     ctx.fill();
-    // ctx.fill("black");
   });
 }
 
@@ -552,8 +559,10 @@ function updateMetrics() {
   // Calculate vectorized center of the flock
   globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
   let ext = 0;
-  boids_copy = boids.copyWithin()
-  for (boid of boids) {
+  boids_copy = boids.copyWithin();
+  boids_copy = boids_copy.filter((el) => el !== undefined);
+
+  for (boid of boids_copy) {
     globalVector.dx += boid.dx;
     globalVector.dy += boid.dy;
     globalVector.x += boid.x;
@@ -564,7 +573,7 @@ function updateMetrics() {
   globalVector.x /= boids.length;
   globalVector.y /= boids.length;
 
-  for (boid of boids) {
+  for (boid of boids_copy) {
     ext += Math.sqrt(
       (globalVector.x - boid.x) ** 2 + (globalVector.y - boid.y) ** 2
     );
@@ -575,11 +584,11 @@ function updateMetrics() {
   extensionHistory.push(ext);
   boidsAlive.push(boids.length);
 
-  if (extensionHistory.length > maxLength) {
-    extensionHistory.splice(0, 1)
+  if (extensionHistory.length > MAX_PLOT_LEN) {
+    extensionHistory.splice(0, 1);
   }
-  if (boidsAlive.length > maxLength) {
-    boidsAlive.splice(0, 1)
+  if (boidsAlive.length > MAX_PLOT_LEN) {
+    boidsAlive.splice(0, 1);
   }
 }
 
@@ -588,15 +597,21 @@ function updateMetrics() {
 // -------------------
 function animationLoop() {
   // Update each boid
-  for (let boid of boids) {
+  if (!running) {
+    window.requestAnimationFrame(animationLoop);
+    return;
+  }
+
+  let valid_boids = boids.filter((el) => el !== undefined);
+  for (let boid of valid_boids) {
     // Update the velocities according to each rule
+    keepWithinBounds(boid);
     flyTowardsCenter(boid);
     avoidOthers(boid);
     avoidPredators(boid);
     reactToArrow(boid);
     matchVelocity(boid);
     limitSpeed(boid);
-    keepWithinBounds(boid);
     avoidObstacle(boid);
     passThroughWindCircle(boid);
 
@@ -608,10 +623,10 @@ function animationLoop() {
   }
 
   for (let predatorBoid of predatorBoids) {
+    keepWithinBounds(predatorBoid);
     flyTowardsCenterPredator(predatorBoid);
     matchVelocityPredator(predatorBoid);
     limitSpeed(predatorBoid);
-    keepWithinBounds(predatorBoid);
     avoidObstacle(predatorBoid);
     passThroughWindCircle(predatorBoid);
     eatBoids(predatorBoid);
@@ -623,15 +638,15 @@ function animationLoop() {
   }
 
   for (let leader of leaderBoids) {
+    keepWithinBounds(leader);
     flyTowardsCenter(leader);
     // Leader avoids predator with higher visual range
     avoidPredators(leader);
-    matchVelocity(leader);
-    if (leaderCircle) {
+    // matchVelocity(leader);
+    if (useLeaderCircle) {
       turnInCircles(leader);
     }
     limitSpeed(leader);
-    keepWithinBounds(leader);
 
     leader.x += leader.dx;
     leader.y += leader.dy;
@@ -756,20 +771,25 @@ window.onload = () => {
   document.getElementById("toggle-global-vector").oninput = (ev) => {
     seeGlobalVector = ev.target.checked;
   };
-  document.getElementById("toggle-trail").value = seeTrail;
+  document.getElementById("toggle-trail").value = hideTrail;
   document.getElementById("toggle-trail").oninput = (ev) => {
-    seeTrail = ev.target.checked;
+    hideTrail = ev.target.checked;
   };
-  document.getElementById("toggle-leader-circle").value = leaderCircle;
+  document.getElementById("toggle-leader-circle").value = useLeaderCircle;
   document.getElementById("toggle-leader-circle").oninput = (ev) => {
-    leaderCircle = ev.target.checked;
+    useLeaderCircle = ev.target.checked;
   };
 
   document.getElementById("reset-button").onclick = (ev) => {
     initAll();
   };
-};
 
+  document.getElementById("pause-button").onclick = (ev) => {
+    running = !running;
+    if (!running) ev.target.text = "Play";
+    else ev.target.text = "Pause";
+  };
+};
 
 // ---------------------
 // Draw simulation plots
@@ -777,67 +797,66 @@ window.onload = () => {
 function drawSimPlots() {
   let extensionTrace = {
     y: extensionHistory,
-    mode:'lines',
-    line: {color: BLUE},
-    name: 'Extension'
-  }
+    mode: "lines",
+    line: { color: BLUE },
+    name: "Extension",
+  };
 
   let countBoids = {
     y: boidsAlive,
-    xaxis: 'x2',
-    yaxis: 'y2',  
-    mode: 'lines',
-    line: {color: RED},
-    name: 'Boids alive'
-  }
+    xaxis: "x2",
+    yaxis: "y2",
+    mode: "lines",
+    line: { color: RED },
+    name: "Boids alive",
+  };
 
   let layout = {
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0, 0, 0, 0)",
     xaxis: {
-      tickcolor: 'grey',
+      tickcolor: "grey",
       tickfont: {
-        color: BLUE
+        color: "grey",
       },
-      gridcolor: 'grey',
-      linecolor:'grey'
-
+      gridcolor: "grey",
+      linecolor: "grey",
     },
     yaxis: {
-      tickcolor: 'grey',
+      tickcolor: "grey",
       tickfont: {
-        color: BLUE
+        color: "grey",
       },
-      gridcolor: 'grey',
-      linecolor:'grey'
+      gridcolor: "grey",
+      linecolor: "grey",
     },
     xaxis2: {
-      tickcolor: 'grey',
+      tickcolor: "grey",
       tickfont: {
-        color: BLUE
+        color: "grey",
       },
-      gridcolor: 'grey',
-      linecolor:'grey'
+      gridcolor: "grey",
+      linecolor: "grey",
     },
     yaxis2: {
-      tickcolor: 'grey',
+      tickcolor: "grey",
       tickfont: {
-        color: BLUE
+        color: "grey",
       },
-      gridcolor: 'grey',
-      linecolor:'grey'
+      gridcolor: "grey",
+      linecolor: "grey",
     },
     legend: {
       font: {
-        color: BLUE
-      }
+        color: "grey",
+      },
     },
-    grid: {rows: 2, columns: 1, pattern: 'independent'},
-  }
+    grid: { rows: 2, columns: 1, pattern: "independent" },
+  };
 
-  Plotly.newPlot('charts', [extensionTrace, countBoids], layout);
-  
+  Plotly.newPlot("charts", [extensionTrace, countBoids], layout);
+
   var interval = setInterval(function () {
-    Plotly.update(charts, {y: [extensionHistory, boidsAlive]})
-  }, 1000)
+    Plotly.update(charts, { y: [extensionHistory, boidsAlive] });
+  }, TIME_UPDATE_PLOTS);
 }
