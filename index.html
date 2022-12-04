@@ -9,80 +9,130 @@
   <link rel="stylesheet" href="global.css" />
   <!-- Compiled and minified JavaScript -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.16.1.min.js"></script>
   <link rel="icon" href="/favicon.svg" />
   <head>
     <meta charset="utf-8" />
     <title>Boids</title>
     <script src="./boids.js"></script>
     <style type="text/css">
-      html {
-        height:100%;
-      }
       body {
         margin: 0;
         background: #282c34;
         overflow: hidden;
         display: flex;
         flex-direction: column;
-        height:100%;
-        width: 100%
       }
-      #bottom {
-        flex:1;
+      #boids-div {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      #charts-div {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
       }
     </style>
   </head>
-    <body onmousemove="mouse_position(event)">
-      <form action="#" id="top">
-        <div class="row" style="position: relative">
-          <a class="waves-effect waves-light btn col s1" id="reset-button">Reset</a>
-          <div class="col s2">
-            <p class="blue-text">Coherence</p>
-            <p class="range-field">
-              <input type="range" id="slider-coherence" min="0" max="1000"/>
-            </p>
-          </div>
-          <div class="col s2">
-            <p class="blue-text">Separation</p>
-            <p class="range-field">
-              <input type="range" id="slider-separation" min="0" max="100" />
-            </p>
-          </div>
-          <div class="col s2">
-            <p class="blue-text">Alignment</p>
-            <p class="range-field">
-              <input type="range" id="slider-alignment" min="0" max="100">
-            </p>
-          </div>
-          <div class="col s2">
-            <p class="blue-text">Visual Range</p>
-            <p class="range-field">
-              <input type="range" id="slider-visual-range" min="0" max="100"/>
-            </p>
-          </div>
-          <div class="col s2">
-            <p class="blue-text">Predator coherence</p>
-            <p class="range-field">
-              <input type="range" id="slider-predator-coherence" min="0" max="50"/>
-            </p>
-          </div>
-          <div class="col s2">
-            <p class="blue-text">Avoid predator</p>
-            <p class="range-field">
-              <input type="range" id="slider-avoid-predator" min="0" max="100"/>
-            </p>
-          </div>
-          <div class="col s2">
-            <p class="blue-text">Mouse as Leader</p>
-            <label class="switch"
-              ><input type="checkbox" id="toggle-mouse" />
-              <div></div>
-            </label>
-          </div>
+  <body onmousemove="mouse_position(event)">
+    <form action="#" id="top">
+      <div class="row" style="position: relative">
+        <div class="col s1" style="margin-left: 0.5em">
+          <a class="waves-effect waves-light btn row" id="reset-button"
+            >Reset</a
+          >
+          <a class="waves-effect waves-light btn row" id="pause-button"
+            >Pause</a
+          >
         </div>
-      </form>
-      <div id="bottom">
-        <canvas id="boids"></canvas>
+        <div class="col s1">
+          <p class="blue-text">Coherence</p>
+          <p class="range-field">
+            <input type="range" id="slider-coherence" min="0" max="1000" />
+          </p>
+        </div>
+        <!-- <a class="btn tooltipped" data-position="bottom" data-tooltip="I am a tooltip">Hover me!</a> -->
+        <div class="col s1">
+          <p class="blue-text">Separation</p>
+          <p class="range-field">
+            <input type="range" id="slider-separation" min="0" max="100" />
+          </p>
+        </div>
+        <div class="col s1">
+          <p class="blue-text">Alignment</p>
+          <p class="range-field">
+            <input type="range" id="slider-alignment" min="0" max="100" />
+          </p>
+        </div>
+        <div class="col s1">
+          <p class="blue-text">Visual Range</p>
+          <p class="range-field">
+            <input type="range" id="slider-visual-range" min="0" max="100" />
+          </p>
+        </div>
+        <div class="col s1">
+          <p class="blue-text">Predator coherence</p>
+          <p class="range-field">
+            <input
+              type="range"
+              id="slider-predator-coherence"
+              min="0"
+              max="50"
+            />
+          </p>
+        </div>
+        <div class="col s1">
+          <p class="blue-text">Avoid predator</p>
+          <p class="range-field">
+            <input type="range" id="slider-avoid-predator" min="0" max="100" />
+          </p>
+        </div>
+
+        <div class="col s1">
+          <p class="blue-text">Obstacles</p>
+          <label class="switch"
+            ><input type="checkbox" id="toggle-obstacles" />
+            <div></div>
+          </label>
+        </div>
+        <div class="col s1">
+          <p class="blue-text">Leader</p>
+          <label class="switch"
+            ><input type="checkbox" id="toggle-leaders" />
+            <div></div>
+          </label>
+        </div>
+        <div class="col s1">
+          <p class="blue-text">Predator</p>
+          <label class="switch"
+            ><input type="checkbox" id="toggle-predators" />
+            <div></div>
+          </label>
+        </div>
+        <div class="col s1">
+          <p class="blue-text">See Average</p>
+          <label class="switch"
+            ><input type="checkbox" id="toggle-global-vector" />
+            <div></div>
+          </label>
+        </div>
+        <div class="col s1">
+          <p class="blue-text">Hide Trail</p>
+          <label class="switch"
+            ><input type="checkbox" id="toggle-trail" />
+            <div></div>
+          </label>
+        </div>
       </div>
+    </form>
+    <div id="boids-div" class="row">
+      <canvas id="boids"></canvas>
+    </div>
+    <div id="charts-div" class="row">
+      <div style="flex: 1" id="charts"></div>
+    </div>
   </body>
 </html>

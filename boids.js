@@ -1,24 +1,32 @@
+// Simulation globals
 // Size of canvas. These get updated to fill the whole browser.
 let width = 150;
 let height = 150;
+let running = true;
 
 // ---------------------
 // Simulation constants
 // ---------------------
-const NUM_BOIDS = 100;
+const NUM_BOIDS = 50;
 const NUM_PREDATORS = 1;
 const NUM_LEADERS = 1;
 const NUM_OBSTACLES = 4;
 const NUM_WIND_CIRCLES = 4;
-const BOID_SPEED_LIMIT = 8;
-const LEADER_VISUAL_RANGE_MULT = 3;
-const COMM_INTERVAL = 500;
+const BOID_SPEED_LIMIT = 6;
+const LEADER_SEES_PREDATOR_MULT = 3;
+const BOID_SEES_LEADER_MULT = 3;
+const MARGIN = 200;
+const TURN_FACTOR = 2;
+const TIME_INDIRECT_COMM = 500;
+const TIME_UPDATE_PLOTS = 1000;
+const MAX_PLOT_LEN = 10000; // Max length of simulations data arrays
 // Colors constants
-// Colors
 const YELLOW = "#f4df55";
 const BLUE = "#558cf4";
+const GREEN = "#63D471";
 const RED = "#d8315b";
 const ALPHA_BLUE = "#558cf466";
+const ALPHA_GREEN = "#63D47166";
 const ALPHA_RED = "#d8315b66";
 const ALPHA_YELLOW = "#f4df5566";
 // Colors config
@@ -33,22 +41,41 @@ const boidsTrails = {
   leaderBoid: ALPHA_YELLOW,
 };
 
+// ---------------
+// Simulation data
+// ---------------
+let globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
+let extensionHistory = [];
+let boidsAliveHistory = [];
+
 // ---------------------
 // Simulation parameters
 // ---------------------
-let visualRange = 75;
+let baseVisualRange = 75;
 let centeringFactor = 0.005; // Coherence
 let avoidFactor = 0.05; // Separation
 let matchingFactor = 0.05; // Alignment
-// Mouse leader
-let mouseLeaderMode = false;
-let mouseLeaderWeight = 0.3; // How much the boids will go towards the leader
 // Predation
 let predationFactor = 0.005; // How much the predator will pursue the flock
 let avoidPredatorFactor = 0.05; // How much the flock try to avoid the predator
-var eatRange = 10;
+var eatRange = 40; // How far the predator can get its prey
+// =======
+// OPTIONS
+// =======
 // Visual
-let drawTrail = true;
+let hideTrail = false;
+let seeGlobalVector = false;
+// Mouse leader
+let useMouseLeader = false;
+let mouseLeaderWeight = 0.3; // How much the boids will go towards the leader
+// Obstacles and Turbulence
+let useObstaclesTurb = false;
+// Leader
+let useLeaders = false;
+let followLeaderFactor = 0.5;
+let leaderRadius = 100;
+// Predator
+let usePredators = false;
 
 // Interaction
 let mouse = {
@@ -132,11 +159,12 @@ function updateArrows() {
 }
 
 function reactToArrow(boid) {
+  if (!useLeaders) return;
   for (leader of leaderBoids) {
     // If boid can see an arrow
     if (
       positionDistance(boid.x, boid.y, leader.arrow_x, leader.arrow_y) <
-      visualRange
+      baseVisualRange
     ) {
       boid.dx += leader.arrow_dx;
       boid.dy += leader.arrow_dy;
@@ -145,6 +173,7 @@ function reactToArrow(boid) {
 }
 
 function distance(A, B) {
+  if (!A || !B) return;
   return Math.sqrt((A.x - B.x) * (A.x - B.x) + (A.y - B.y) * (A.y - B.y));
 }
 
@@ -190,44 +219,42 @@ function nClosestBoids(boid, n) {
 // size and width/height variables.
 function sizeCanvas() {
   const canvas = document.getElementById("boids");
+  //   const canvas = document.getElementById("metrics");
 
   width = canvas.parentElement.clientWidth;
   height = canvas.parentElement.clientHeight;
 
   canvas.width = width;
-  canvas.height = height;
+  canvas.height = height - 100;
 }
 
 // Constrain a boid to within the window. If it gets too close to an edge,
 // nudge it back in and reverse its direction.
 function keepWithinBounds(boid) {
-  const margin = 100;
-  const turnFactor = 1;
-
-  if (boid.x < margin) {
-    boid.dx += turnFactor;
+  if (boid.x < MARGIN) {
+    boid.dx += TURN_FACTOR;
   }
-  if (boid.x > width - margin) {
-    boid.dx -= turnFactor;
+  if (boid.x > width - MARGIN) {
+    boid.dx -= TURN_FACTOR;
   }
-  if (boid.y < margin) {
-    boid.dy += turnFactor;
+  if (boid.y < MARGIN) {
+    boid.dy += TURN_FACTOR;
   }
-  if (boid.y > height - margin) {
-    boid.dy -= turnFactor;
+  if (boid.y > height - MARGIN) {
+    boid.dy -= TURN_FACTOR;
   }
 }
 
 // Find the center of mass of the other boids and adjust velocity slightly to
 // point towards the center of mass.
-// If leader is visible, go towards leader with a greater weight.
+// [Deprecated: If mouse leader is used, go towards it with a greater weight.]
 function flyTowardsCenter(boid) {
   let centerX = 0;
   let centerY = 0;
   let numNeighbors = 0;
 
   for (otherBoid of boids) {
-    if (distance(boid, otherBoid) < visualRange) {
+    if (distance(boid, otherBoid) < baseVisualRange) {
       centerX += otherBoid.x;
       centerY += otherBoid.y;
       numNeighbors += 1;
@@ -237,30 +264,43 @@ function flyTowardsCenter(boid) {
     centerX = centerX / numNeighbors;
     centerY = centerY / numNeighbors;
 
-    // Weighting in mouse leader position if mouse leader is visible
-    if (mouseLeaderMode) {
-      if (distance(boid, mouse) < visualRange * LEADER_VISUAL_RANGE_MULT) {
-        centerX =
-          mouse.x * mouseLeaderWeight + centerX * (1 - mouseLeaderWeight);
-        centerY =
-          mouse.y * mouseLeaderWeight + centerY * (1 - mouseLeaderWeight);
-      }
-    }
-
     boid.dx += (centerX - boid.x) * centeringFactor;
     boid.dy += (centerY - boid.y) * centeringFactor;
   }
 }
 
-// The predator flies towards the center of the flock it is huntinh
-// The predator have a larger visual range
+function flyTowardsLeader(boid) {
+  if (!useLeaders) return;
+
+  let targetX = 0;
+  let targetY = 0;
+  let foundLeader = false;
+
+  for (leader of leaderBoids) {
+    if (distance(boid, leader) < baseVisualRange * BOID_SEES_LEADER_MULT) {
+      targetX = leader.x;
+      targetY = leader.y;
+      foundLeader = true;
+      break;
+    }
+  }
+  if (foundLeader) {
+    boid.dx += (targetX - boid.x) * followLeaderFactor;
+    boid.dy += (targetY - boid.y) * followLeaderFactor;
+  }
+}
+
+// The predator flies towards the center of the flock it is hunting
+// The predator has a larger visual range
 function flyTowardsCenterPredator(boid) {
+  if (!usePredators) return;
+
   let centerX = 0;
   let centerY = 0;
   let numNeighbors = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < 1.5 * visualRange) {
+    if (distance(boid, otherBoid) < 1.5 * baseVisualRange) {
       centerX += otherBoid.x;
       centerY += otherBoid.y;
       numNeighbors += 1;
@@ -296,14 +336,16 @@ function avoidOthers(boid) {
 
 // Run away from predators
 function avoidPredators(boid) {
+  if (!usePredators) return;
+
   let moveX = 0;
   let moveY = 0;
   for (let predator of predatorBoids) {
     if (
       distance(boid, predator) <
       (boid.type == "leaderBoid"
-        ? visualRange * LEADER_VISUAL_RANGE_MULT
-        : visualRange)
+        ? baseVisualRange * LEADER_SEES_PREDATOR_MULT
+        : baseVisualRange)
     ) {
       moveX += boid.x - predator.x;
       moveY += boid.y - predator.y;
@@ -316,11 +358,13 @@ function avoidPredators(boid) {
 
 // Boids will try to avoid obstacles, the near it gets more it will avoid.
 function avoidObstacle(boid) {
+  if (!useObstaclesTurb) return;
+
   let moveX = 0;
   let moveY = 0;
   let changeDirectionFactor = 0;
   for (let obstacle of obstacles) {
-    if (distance(boid, obstacle) - obstacle.r < visualRange) {
+    if (distance(boid, obstacle) - obstacle.r < baseVisualRange) {
       moveX += boid.x - obstacle.x;
       moveY += boid.y - obstacle.y;
       changeDirectionFactor +=
@@ -334,6 +378,8 @@ function avoidObstacle(boid) {
 
 // The windCircle adds a factor to each direction of the boid
 function passThroughWindCircle(boid) {
+  if (!useObstaclesTurb) return;
+
   let moveX = 0;
   let moveY = 0;
   let aerodinamicFactor = 1;
@@ -356,7 +402,7 @@ function matchVelocity(boid) {
   let numNeighbors = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < visualRange) {
+    if (distance(boid, otherBoid) < baseVisualRange) {
       avgDX += otherBoid.dx;
       avgDY += otherBoid.dy;
       numNeighbors += 1;
@@ -372,10 +418,11 @@ function matchVelocity(boid) {
   }
 }
 
-// Find the average velocity (speed and direction) of the other boids and
-// adjust velocity slightly to match.
 function eatBoids(predator) {
+  if (!usePredators) return;
+
   let boidsToEat = [];
+
   for (let i = 0; i < boids.length; i++) {
     let otherBoid = boids[i];
     if (distance(predator, otherBoid) < eatRange) {
@@ -395,7 +442,7 @@ function matchVelocityPredator(boid) {
   let numNeighbors = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < 1.5 * visualRange) {
+    if (distance(boid, otherBoid) < 1.5 * baseVisualRange) {
       avgDX += otherBoid.dx;
       avgDY += otherBoid.dy;
       numNeighbors += 1;
@@ -421,7 +468,7 @@ function limitSpeed(boid) {
   }
 }
 
-function drawTriangle(ctx, x, y, dx, dy, fillStyle) {
+function drawTriangle(ctx, x, y, dx, dy, fillStyle, mult = 1) {
   const angle = Math.atan2(dy, dx);
   ctx.translate(x, y);
   ctx.rotate(angle);
@@ -429,17 +476,18 @@ function drawTriangle(ctx, x, y, dx, dy, fillStyle) {
   ctx.fillStyle = fillStyle;
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.lineTo(x - 15, y + 5);
-  ctx.lineTo(x - 15, y - 5);
+  ctx.lineTo(x - 15 * mult, y + 5 * mult);
+  ctx.lineTo(x - 15 * mult, y - 5 * mult);
   ctx.lineTo(x, y);
   ctx.fill();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 function drawBoid(ctx, boid) {
+  if (!boid) return;
   drawTriangle(ctx, boid.x, boid.y, boid.dx, boid.dy, boidsColors[boid.type]);
 
-  if (drawTrail) {
+  if (!hideTrail) {
     ctx.strokeStyle = boidsTrails[boid.type];
     ctx.beginPath();
     ctx.moveTo(boid.history[0][0], boid.history[0][1]);
@@ -449,7 +497,8 @@ function drawBoid(ctx, boid) {
     ctx.stroke();
   }
 
-  // If leader, draw arrow indicating last taken direction
+  // If leader, and not in circle-movement mode,
+  // draw arrow indicating last taken direction
   if (boid.type == "leaderBoid") {
     drawTriangle(
       ctx,
@@ -463,16 +512,17 @@ function drawBoid(ctx, boid) {
 }
 
 function drawObstacles(ctx) {
+  if (!useObstaclesTurb) return;
   obstacles.forEach(function (obstacle) {
     ctx.beginPath();
     ctx.arc(obstacle.x, obstacle.y, obstacle.r, 0, Math.PI * 2);
     ctx.fillStyle = "black";
     ctx.fill();
-    // ctx.fill("black");
   });
 }
 
 function drawWindCircle(ctx) {
+  if (!useObstaclesTurb) return;
   windCircles.forEach(function (windCircle) {
     ctx.beginPath();
     ctx.arc(windCircle.x, windCircle.y, windCircle.r, 0, Math.PI * 2);
@@ -495,20 +545,76 @@ function drawMouseLeader(ctx, mouse) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
+function drawGlobalVector(ctx) {
+  drawTriangle(
+    ctx,
+    globalVector.x,
+    globalVector.y,
+    globalVector.dx,
+    globalVector.dy,
+    ALPHA_GREEN,
+    2
+  );
+}
+
+function updateMetrics() {
+  // Calculate vectorized center of the flock
+  globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
+  let ext = 0;
+  boids_copy = boids.copyWithin();
+  boids_copy = boids_copy.filter((el) => el !== undefined);
+
+  for (boid of boids_copy) {
+    globalVector.dx += boid.dx;
+    globalVector.dy += boid.dy;
+    globalVector.x += boid.x;
+    globalVector.y += boid.y;
+  }
+  globalVector.dx /= boids.length;
+  globalVector.dy /= boids.length;
+  globalVector.x /= boids.length;
+  globalVector.y /= boids.length;
+
+  for (boid of boids_copy) {
+    ext += Math.sqrt(
+      (globalVector.x - boid.x) ** 2 + (globalVector.y - boid.y) ** 2
+    );
+  }
+
+  ext /= boids.length;
+
+  extensionHistory.push(ext);
+  boidsAliveHistory.push(boids.length);
+
+  if (extensionHistory.length > MAX_PLOT_LEN) {
+    extensionHistory.splice(0, 1);
+  }
+  if (boidsAliveHistory.length > MAX_PLOT_LEN) {
+    boidsAliveHistory.splice(0, 1);
+  }
+}
+
 // -------------------
 // Main animation loop
 // -------------------
 function animationLoop() {
   // Update each boid
-  for (let boid of boids) {
+  if (!running) {
+    window.requestAnimationFrame(animationLoop);
+    return;
+  }
+
+  let valid_boids = boids.filter((el) => el !== undefined);
+  for (let boid of valid_boids) {
     // Update the velocities according to each rule
+    keepWithinBounds(boid);
     flyTowardsCenter(boid);
+    flyTowardsLeader(boids);
     avoidOthers(boid);
     avoidPredators(boid);
     reactToArrow(boid);
     matchVelocity(boid);
     limitSpeed(boid);
-    keepWithinBounds(boid);
     avoidObstacle(boid);
     passThroughWindCircle(boid);
 
@@ -520,10 +626,10 @@ function animationLoop() {
   }
 
   for (let predatorBoid of predatorBoids) {
+    keepWithinBounds(predatorBoid);
     flyTowardsCenterPredator(predatorBoid);
     matchVelocityPredator(predatorBoid);
     limitSpeed(predatorBoid);
-    keepWithinBounds(predatorBoid);
     avoidObstacle(predatorBoid);
     passThroughWindCircle(predatorBoid);
     eatBoids(predatorBoid);
@@ -535,12 +641,12 @@ function animationLoop() {
   }
 
   for (let leader of leaderBoids) {
-    flyTowardsCenter(leader);
+    keepWithinBounds(leader);
     // Leader avoids predator with higher visual range
     avoidPredators(leader);
-    matchVelocity(leader);
+    // matchVelocity(leader);
+    flyTowardsCenter(leader);
     limitSpeed(leader);
-    keepWithinBounds(leader);
 
     leader.x += leader.dx;
     leader.y += leader.dy;
@@ -554,20 +660,43 @@ function animationLoop() {
   for (boid of boids) {
     drawBoid(ctx, boid);
   }
-  if (mouseLeaderMode) drawMouseLeader(ctx, mouse);
+  if (useMouseLeader) drawMouseLeader(ctx, mouse);
 
-  for (predatorBoid of predatorBoids) {
-    drawBoid(ctx, predatorBoid);
+  if (usePredators) {
+    for (predatorBoid of predatorBoids) {
+      drawBoid(ctx, predatorBoid);
+    }
   }
 
-  for (leaderBoid of leaderBoids) {
-    drawBoid(ctx, leaderBoid);
+  if (useLeaders) {
+    for (leaderBoid of leaderBoids) {
+      drawBoid(ctx, leaderBoid);
+    }
   }
-  drawObstacles(ctx);
-  drawWindCircle(ctx);
+
+  if (useObstaclesTurb) {
+    drawObstacles(ctx);
+    drawWindCircle(ctx);
+  }
+
+  updateMetrics();
+  if (seeGlobalVector) {
+    drawGlobalVector(ctx);
+  }
 
   // Schedule the next frame
   window.requestAnimationFrame(animationLoop);
+}
+
+function initAll() {
+  // Randomly distribute the boids to start
+  initBoids();
+  initPredators();
+  initLeaders();
+  initObstacles();
+  initWindCircles();
+  extensionHistory = [];
+  boidsAliveHistory = [];
 }
 
 window.onload = () => {
@@ -575,18 +704,17 @@ window.onload = () => {
   window.addEventListener("resize", sizeCanvas, false);
   sizeCanvas();
 
-  // Randomly distribute the boids to start
-  initBoids();
-  initPredators();
-  initLeaders();
-  initObstacles();
-  initWindCircles();
+  // Randomly distribute the boids and obstacles to start
+  initAll();
+
+  // Init simulation plots
+  drawSimPlots();
 
   // Schedule the main animation loop
   window.requestAnimationFrame(animationLoop);
 
   // Update the indicating arrows left by the leaders
-  window.setInterval(updateArrows, COMM_INTERVAL);
+  window.setInterval(updateArrows, TIME_INDIRECT_COMM);
 
   // Define sliders behaviors
   document.getElementById("slider-coherence").value = centeringFactor * 1000;
@@ -605,16 +733,12 @@ window.onload = () => {
     matchingFactor = ev.target.value / 100;
   };
 
-  document.getElementById("slider-visual-range").value = visualRange;
+  document.getElementById("slider-visual-range").value = baseVisualRange;
   document.getElementById("slider-visual-range").oninput = (ev) => {
-    visualRange = ev.target.value;
+    baseVisualRange = ev.target.value;
   };
 
-  document.getElementById("toggle-mouse").value = mouseLeaderMode;
-  document.getElementById("toggle-mouse").oninput = (ev) => {
-    mouseLeaderMode = ev.target.checked;
-  };
-
+  // Predator
   document.getElementById("slider-predator-coherence").value =
     predationFactor * 1000;
   document.getElementById("slider-predator-coherence").oninput = (ev) => {
@@ -627,7 +751,105 @@ window.onload = () => {
     avoidPredatorFactor = ev.target.value / 100;
   };
 
+  // Toggles
+  document.getElementById("toggle-obstacles").value = useObstaclesTurb;
+  document.getElementById("toggle-obstacles").oninput = (ev) => {
+    useObstaclesTurb = ev.target.checked;
+  };
+  document.getElementById("toggle-leaders").value = useLeaders;
+  document.getElementById("toggle-leaders").oninput = (ev) => {
+    useLeaders = ev.target.checked;
+  };
+  document.getElementById("toggle-predators").value = usePredators;
+  document.getElementById("toggle-predators").oninput = (ev) => {
+    usePredators = ev.target.checked;
+  };
+  document.getElementById("toggle-global-vector").value = seeGlobalVector;
+  document.getElementById("toggle-global-vector").oninput = (ev) => {
+    seeGlobalVector = ev.target.checked;
+  };
+  document.getElementById("toggle-trail").value = hideTrail;
+  document.getElementById("toggle-trail").oninput = (ev) => {
+    hideTrail = ev.target.checked;
+  };
+
   document.getElementById("reset-button").onclick = (ev) => {
-    initBoids();
+    initAll();
+  };
+
+  document.getElementById("pause-button").onclick = (ev) => {
+    running = !running;
+    if (!running) ev.target.text = "Play";
+    else ev.target.text = "Pause";
   };
 };
+
+// ---------------------
+// Draw simulation plots
+// ---------------------
+function drawSimPlots() {
+  let extensionTrace = {
+    y: extensionHistory,
+    mode: "lines",
+    line: { color: GREEN },
+    name: "Extension",
+  };
+
+  let countBoids = {
+    y: boidsAliveHistory,
+    xaxis: "x2",
+    yaxis: "y2",
+    mode: "lines",
+    line: { color: RED },
+    name: "Boids alive",
+  };
+
+  let layout = {
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0, 0, 0, 0)",
+    xaxis: {
+      tickcolor: "grey",
+      tickfont: {
+        color: "grey",
+      },
+      gridcolor: "grey",
+      linecolor: "grey",
+    },
+    yaxis: {
+      tickcolor: "grey",
+      tickfont: {
+        color: "grey",
+      },
+      gridcolor: "grey",
+      linecolor: "grey",
+    },
+    xaxis2: {
+      tickcolor: "grey",
+      tickfont: {
+        color: "grey",
+      },
+      gridcolor: "grey",
+      linecolor: "grey",
+    },
+    yaxis2: {
+      tickcolor: "grey",
+      tickfont: {
+        color: "grey",
+      },
+      gridcolor: "grey",
+      linecolor: "grey",
+    },
+    legend: {
+      font: {
+        color: "grey",
+      },
+    },
+    grid: { rows: 2, columns: 1, pattern: "independent" },
+  };
+
+  Plotly.newPlot("charts", [extensionTrace, countBoids], layout);
+
+  var plotInterval = setInterval(function () {
+    Plotly.update(charts, { y: [extensionHistory, boidsAliveHistory] });
+  }, TIME_UPDATE_PLOTS);
+}
