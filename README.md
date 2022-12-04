@@ -13,7 +13,7 @@ This code is [MIT licensed](http://en.wikipedia.org/wiki/MIT_License).
 
 ## What is this
 
-This is a boids (bird-oid objects) simulation done for a Multi-Agents Systems class, taken on 2022 at ENSTA Paris.
+This is a boids (bird-oid objects) simulation done for a Multi-Agents Systems class, taken on 2022 at ENSTA Paris. More details on [`report.pdf`](report.pdf).
 
 ### Improvements
 
@@ -28,7 +28,9 @@ We have developed on Ben's original code by adding some functionalities:
 ## How do I run this code?
 > *This section has been kept from Ben's original Readme*
 
-It ought to run in any web browser. Download (or clone) the files. Then, just double-clicking on `index.html` on most computers will open the simulation in your web browser.
+It should run in any web browser. Download (or clone) the files. Then, just double-clicking on `index.html` on most computers will open the simulation in your web browser.
+
+In case this does not work, another way is to open the repo on VSCode, instal the LiveServer extension and activate a live server while on the `index.html` file.
 
 You can then edit `boids.js` to tweak and experiment with the algorithm. Simply save your changes and reload the web browser page to see the effect.
 

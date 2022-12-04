@@ -14,6 +14,8 @@ const NUM_OBSTACLES = 4;
 const NUM_WIND_CIRCLES = 4;
 const BOID_SPEED_LIMIT = 6;
 const LEADER_SEES_PREDATOR_MULT = 3;
+const PREDATOR_SEES_BOID_MULT = 1.5;
+const PREDATOR_ALIGNMENT_CORRECTION = 0.5;
 const BOID_SEES_LEADER_MULT = 3;
 const MARGIN = 200;
 const TURN_FACTOR = 2;
@@ -56,7 +58,7 @@ let centeringFactor = 0.005; // Coherence
 let avoidFactor = 0.05; // Separation
 let matchingFactor = 0.05; // Alignment
 // Predation
-let predationFactor = 0.005; // How much the predator will pursue the flock
+let predationFactor = 0.01; // How much the predator will pursue the flock
 let avoidPredatorFactor = 0.05; // How much the flock try to avoid the predator
 var eatRange = 40; // How far the predator can get its prey
 // =======
@@ -297,19 +299,19 @@ function flyTowardsCenterPredator(boid) {
 
   let centerX = 0;
   let centerY = 0;
-  let numNeighbors = 0;
+  let numTargets = 0;
 
-  for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < 1.5 * baseVisualRange) {
-      centerX += otherBoid.x;
-      centerY += otherBoid.y;
-      numNeighbors += 1;
+  for (let boid of boids) {
+    if (distance(boid, boid) < baseVisualRange * PREDATOR_SEES_BOID_MULT) {
+      centerX += boid.x;
+      centerY += boid.y;
+      numTargets += 1;
     }
   }
 
-  if (numNeighbors > 0) {
-    centerX = centerX / numNeighbors;
-    centerY = centerY / numNeighbors;
+  if (numTargets > 0) {
+    centerX = centerX / numTargets;
+    centerY = centerY / numTargets;
 
     boid.dx += (centerX - boid.x) * predationFactor;
     boid.dy += (centerY - boid.y) * predationFactor;
@@ -439,22 +441,24 @@ function eatBoids(predator) {
 function matchVelocityPredator(boid) {
   let avgDX = 0;
   let avgDY = 0;
-  let numNeighbors = 0;
+  let numTargets = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < 1.5 * baseVisualRange) {
+    if (distance(boid, otherBoid) < baseVisualRange * PREDATOR_SEES_BOID_MULT) {
       avgDX += otherBoid.dx;
       avgDY += otherBoid.dy;
-      numNeighbors += 1;
+      numTargets += 1;
     }
   }
 
-  if (numNeighbors) {
-    avgDX = avgDX / numNeighbors;
-    avgDY = avgDY / numNeighbors;
+  if (numTargets) {
+    avgDX = avgDX / numTargets;
+    avgDY = avgDY / numTargets;
 
-    boid.dx += (avgDX - boid.dx) * matchingFactor * 0.5;
-    boid.dy += (avgDY - boid.dy) * matchingFactor * 0.5;
+    boid.dx +=
+      (avgDX - boid.dx) * matchingFactor * PREDATOR_ALIGNMENT_CORRECTION;
+    boid.dy +=
+      (avgDY - boid.dy) * matchingFactor * PREDATOR_ALIGNMENT_CORRECTION;
   }
 }
 
@@ -644,7 +648,6 @@ function animationLoop() {
     keepWithinBounds(leader);
     // Leader avoids predator with higher visual range
     avoidPredators(leader);
-    // matchVelocity(leader);
     flyTowardsCenter(leader);
     limitSpeed(leader);
 
