@@ -13,10 +13,11 @@ const NUM_LEADERS = 1;
 const NUM_OBSTACLES = 4;
 const NUM_WIND_CIRCLES = 4;
 const BOID_SPEED_LIMIT = 6;
-const LEADER_VISUAL_RANGE_MULT = 3;
-const COMM_INTERVAL = 500;
+const LEADER_SEES_PREDATOR_MULT = 3;
+const BOID_SEES_LEADER_MULT = 3;
 const MARGIN = 200;
 const TURN_FACTOR = 2;
+const TIME_INDIRECT_COMM = 500;
 const TIME_UPDATE_PLOTS = 1000;
 const MAX_PLOT_LEN = 10000; // Max length of simulations data arrays
 // Colors constants
@@ -45,12 +46,12 @@ const boidsTrails = {
 // ---------------
 let globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
 let extensionHistory = [];
-let boidsAlive = [];
+let boidsAliveHistory = [];
 
 // ---------------------
 // Simulation parameters
 // ---------------------
-let visualRange = 75;
+let baseVisualRange = 75;
 let centeringFactor = 0.005; // Coherence
 let avoidFactor = 0.05; // Separation
 let matchingFactor = 0.05; // Alignment
@@ -71,7 +72,7 @@ let mouseLeaderWeight = 0.3; // How much the boids will go towards the leader
 let useObstaclesTurb = false;
 // Leader
 let useLeaders = false;
-let useLeaderCircle = false;
+let followLeaderFactor = 0.5;
 let leaderRadius = 100;
 // Predator
 let usePredators = false;
@@ -158,12 +159,12 @@ function updateArrows() {
 }
 
 function reactToArrow(boid) {
-  if (!useLeaders || useLeaderCircle) return;
+  if (!useLeaders) return;
   for (leader of leaderBoids) {
     // If boid can see an arrow
     if (
       positionDistance(boid.x, boid.y, leader.arrow_x, leader.arrow_y) <
-      visualRange
+      baseVisualRange
     ) {
       boid.dx += leader.arrow_dx;
       boid.dy += leader.arrow_dy;
@@ -253,7 +254,7 @@ function flyTowardsCenter(boid) {
   let numNeighbors = 0;
 
   for (otherBoid of boids) {
-    if (distance(boid, otherBoid) < visualRange) {
+    if (distance(boid, otherBoid) < baseVisualRange) {
       centerX += otherBoid.x;
       centerY += otherBoid.y;
       numNeighbors += 1;
@@ -263,18 +264,29 @@ function flyTowardsCenter(boid) {
     centerX = centerX / numNeighbors;
     centerY = centerY / numNeighbors;
 
-    // [Deprecated: Weighting in mouse leader position if mouse leader is visible]
-    if (useMouseLeader) {
-      if (distance(boid, mouse) < visualRange * LEADER_VISUAL_RANGE_MULT) {
-        centerX =
-          mouse.x * mouseLeaderWeight + centerX * (1 - mouseLeaderWeight);
-        centerY =
-          mouse.y * mouseLeaderWeight + centerY * (1 - mouseLeaderWeight);
-      }
-    }
-
     boid.dx += (centerX - boid.x) * centeringFactor;
     boid.dy += (centerY - boid.y) * centeringFactor;
+  }
+}
+
+function flyTowardsLeader(boid) {
+  if (!useLeaders) return;
+
+  let targetX = 0;
+  let targetY = 0;
+  let foundLeader = false;
+
+  for (leader of leaderBoids) {
+    if (distance(boid, leader) < baseVisualRange * BOID_SEES_LEADER_MULT) {
+      targetX = leader.x;
+      targetY = leader.y;
+      foundLeader = true;
+      break;
+    }
+  }
+  if (foundLeader) {
+    boid.dx += (targetX - boid.x) * followLeaderFactor;
+    boid.dy += (targetY - boid.y) * followLeaderFactor;
   }
 }
 
@@ -288,7 +300,7 @@ function flyTowardsCenterPredator(boid) {
   let numNeighbors = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < 1.5 * visualRange) {
+    if (distance(boid, otherBoid) < 1.5 * baseVisualRange) {
       centerX += otherBoid.x;
       centerY += otherBoid.y;
       numNeighbors += 1;
@@ -332,8 +344,8 @@ function avoidPredators(boid) {
     if (
       distance(boid, predator) <
       (boid.type == "leaderBoid"
-        ? visualRange * LEADER_VISUAL_RANGE_MULT
-        : visualRange)
+        ? baseVisualRange * LEADER_SEES_PREDATOR_MULT
+        : baseVisualRange)
     ) {
       moveX += boid.x - predator.x;
       moveY += boid.y - predator.y;
@@ -352,7 +364,7 @@ function avoidObstacle(boid) {
   let moveY = 0;
   let changeDirectionFactor = 0;
   for (let obstacle of obstacles) {
-    if (distance(boid, obstacle) - obstacle.r < visualRange) {
+    if (distance(boid, obstacle) - obstacle.r < baseVisualRange) {
       moveX += boid.x - obstacle.x;
       moveY += boid.y - obstacle.y;
       changeDirectionFactor +=
@@ -390,7 +402,7 @@ function matchVelocity(boid) {
   let numNeighbors = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < visualRange) {
+    if (distance(boid, otherBoid) < baseVisualRange) {
       avgDX += otherBoid.dx;
       avgDY += otherBoid.dy;
       numNeighbors += 1;
@@ -430,7 +442,7 @@ function matchVelocityPredator(boid) {
   let numNeighbors = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < 1.5 * visualRange) {
+    if (distance(boid, otherBoid) < 1.5 * baseVisualRange) {
       avgDX += otherBoid.dx;
       avgDY += otherBoid.dy;
       numNeighbors += 1;
@@ -454,16 +466,6 @@ function limitSpeed(boid) {
     boid.dx = (boid.dx / speed) * BOID_SPEED_LIMIT;
     boid.dy = (boid.dy / speed) * BOID_SPEED_LIMIT;
   }
-}
-
-// Leader will turn in circles
-function turnInCircles(boid) {
-  const speed = Math.sqrt(boid.dx * boid.dx + boid.dy * boid.dy);
-  const speedAngle = Math.atan2(boid.dy, boid.dx);
-  const centripetalAcceleration = (speed * speed) / leaderRadius;
-
-  boid.dx += centripetalAcceleration * Math.cos(speedAngle + Math.PI / 2);
-  boid.dy += centripetalAcceleration * Math.sin(speedAngle + Math.PI / 2);
 }
 
 function drawTriangle(ctx, x, y, dx, dy, fillStyle, mult = 1) {
@@ -497,7 +499,7 @@ function drawBoid(ctx, boid) {
 
   // If leader, and not in circle-movement mode,
   // draw arrow indicating last taken direction
-  if (boid.type == "leaderBoid" && !useLeaderCircle) {
+  if (boid.type == "leaderBoid") {
     drawTriangle(
       ctx,
       boid.arrow_x,
@@ -582,13 +584,13 @@ function updateMetrics() {
   ext /= boids.length;
 
   extensionHistory.push(ext);
-  boidsAlive.push(boids.length);
+  boidsAliveHistory.push(boids.length);
 
   if (extensionHistory.length > MAX_PLOT_LEN) {
     extensionHistory.splice(0, 1);
   }
-  if (boidsAlive.length > MAX_PLOT_LEN) {
-    boidsAlive.splice(0, 1);
+  if (boidsAliveHistory.length > MAX_PLOT_LEN) {
+    boidsAliveHistory.splice(0, 1);
   }
 }
 
@@ -607,6 +609,7 @@ function animationLoop() {
     // Update the velocities according to each rule
     keepWithinBounds(boid);
     flyTowardsCenter(boid);
+    flyTowardsLeader(boids);
     avoidOthers(boid);
     avoidPredators(boid);
     reactToArrow(boid);
@@ -639,13 +642,10 @@ function animationLoop() {
 
   for (let leader of leaderBoids) {
     keepWithinBounds(leader);
-    flyTowardsCenter(leader);
     // Leader avoids predator with higher visual range
     avoidPredators(leader);
     // matchVelocity(leader);
-    if (useLeaderCircle) {
-      turnInCircles(leader);
-    }
+    flyTowardsCenter(leader);
     limitSpeed(leader);
 
     leader.x += leader.dx;
@@ -695,6 +695,8 @@ function initAll() {
   initLeaders();
   initObstacles();
   initWindCircles();
+  extensionHistory = [];
+  boidsAliveHistory = [];
 }
 
 window.onload = () => {
@@ -712,7 +714,7 @@ window.onload = () => {
   window.requestAnimationFrame(animationLoop);
 
   // Update the indicating arrows left by the leaders
-  window.setInterval(updateArrows, COMM_INTERVAL);
+  window.setInterval(updateArrows, TIME_INDIRECT_COMM);
 
   // Define sliders behaviors
   document.getElementById("slider-coherence").value = centeringFactor * 1000;
@@ -731,9 +733,9 @@ window.onload = () => {
     matchingFactor = ev.target.value / 100;
   };
 
-  document.getElementById("slider-visual-range").value = visualRange;
+  document.getElementById("slider-visual-range").value = baseVisualRange;
   document.getElementById("slider-visual-range").oninput = (ev) => {
-    visualRange = ev.target.value;
+    baseVisualRange = ev.target.value;
   };
 
   // Predator
@@ -750,11 +752,6 @@ window.onload = () => {
   };
 
   // Toggles
-
-  //   document.getElementById("toggle-mouse").value = useMouseLeader;
-  //   document.getElementById("toggle-mouse").oninput = (ev) => {
-  //     useMouseLeader = ev.target.checked;
-  //   };
   document.getElementById("toggle-obstacles").value = useObstaclesTurb;
   document.getElementById("toggle-obstacles").oninput = (ev) => {
     useObstaclesTurb = ev.target.checked;
@@ -775,10 +772,6 @@ window.onload = () => {
   document.getElementById("toggle-trail").oninput = (ev) => {
     hideTrail = ev.target.checked;
   };
-  document.getElementById("toggle-leader-circle").value = useLeaderCircle;
-  document.getElementById("toggle-leader-circle").oninput = (ev) => {
-    useLeaderCircle = ev.target.checked;
-  };
 
   document.getElementById("reset-button").onclick = (ev) => {
     initAll();
@@ -798,12 +791,12 @@ function drawSimPlots() {
   let extensionTrace = {
     y: extensionHistory,
     mode: "lines",
-    line: { color: BLUE },
+    line: { color: GREEN },
     name: "Extension",
   };
 
   let countBoids = {
-    y: boidsAlive,
+    y: boidsAliveHistory,
     xaxis: "x2",
     yaxis: "y2",
     mode: "lines",
@@ -856,7 +849,7 @@ function drawSimPlots() {
 
   Plotly.newPlot("charts", [extensionTrace, countBoids], layout);
 
-  var interval = setInterval(function () {
-    Plotly.update(charts, { y: [extensionHistory, boidsAlive] });
+  var plotInterval = setInterval(function () {
+    Plotly.update(charts, { y: [extensionHistory, boidsAliveHistory] });
   }, TIME_UPDATE_PLOTS);
 }
