@@ -26,7 +26,6 @@ We have developed on Ben's original code by adding some functionalities:
 - Optional use of the mouse as a leader (in this case, it does not leave traces behind)
 
 ## How do I run this code?
-> *This section has been kept from Ben's original Readme*
 
 It should run in any web browser. Download (or clone) the files. Then, just double-clicking on `index.html` on most computers will open the simulation in your web browser.
 
