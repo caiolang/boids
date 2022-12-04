@@ -40,7 +40,7 @@ const boidsTrails = {
 let globalVector = { x: 0, y: 0, dx: 0, dy: 0 };
 let extensionHistory = [];
 let boidsAlive = []
-let maxLength = 1000
+let maxLength = 1000 // Max length of simulations data arrays
 
 // ---------------------
 // Simulation parameters
@@ -52,7 +52,7 @@ let matchingFactor = 0.05; // Alignment
 // Predation
 let predationFactor = 0.005; // How much the predator will pursue the flock
 let avoidPredatorFactor = 0.05; // How much the flock try to avoid the predator
-var eatRange = 40;
+var eatRange = 40; // How far the predator can get its prey
 // =======
 // OPTIONS
 // =======
@@ -67,6 +67,8 @@ let useObstaclesTurb = false;
 // Leader
 let useLeaders = false;
 let usePredators = false;
+let leaderCircle = false
+let leaderRadius = 100;
 
 // Interaction
 let mouse = {
@@ -448,6 +450,16 @@ function limitSpeed(boid) {
   }
 }
 
+// Leader will turn in circles
+function turnInCircles(boid) {
+  const speed = Math.sqrt(boid.dx * boid.dx + boid.dy * boid.dy);
+  const speedAngle = Math.atan2(boid.dy, boid.dx);
+  const centripetalAcceleration = speed*speed/leaderRadius;
+
+  boid.dx += centripetalAcceleration*Math.cos(speedAngle + Math.PI/2);
+  boid.dy += centripetalAcceleration*Math.sin(speedAngle + Math.PI/2);
+}
+
 function drawTriangle(ctx, x, y, dx, dy, fillStyle, mult = 1) {
   const angle = Math.atan2(dy, dx);
   ctx.translate(x, y);
@@ -615,6 +627,9 @@ function animationLoop() {
     // Leader avoids predator with higher visual range
     avoidPredators(leader);
     matchVelocity(leader);
+    if (leaderCircle) {
+      turnInCircles(leader);
+    }
     limitSpeed(leader);
     keepWithinBounds(leader);
 
@@ -745,6 +760,10 @@ window.onload = () => {
   document.getElementById("toggle-trail").oninput = (ev) => {
     seeTrail = ev.target.checked;
   };
+  document.getElementById("toggle-leader-circle").value = leaderCircle;
+  document.getElementById("toggle-leader-circle").oninput = (ev) => {
+    leaderCircle = ev.target.checked;
+  };
 
   document.getElementById("reset-button").onclick = (ev) => {
     initAll();
@@ -820,6 +839,5 @@ function drawSimPlots() {
   
   var interval = setInterval(function () {
     Plotly.update(charts, {y: [extensionHistory, boidsAlive]})
-    // Plotly.extendTraces('charts', {y: [extensionHistory, boidsAlive]}, [0, 1])
   }, 1000)
 }
